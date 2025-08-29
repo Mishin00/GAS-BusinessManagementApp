@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="p-6 font-sans bg-gray-50 text-gray-800">
+    <!-- ローディング表示 -->
+    <div id="loading" class="fixed inset-0 bg-white bg-opacity-70 flex items-center justify-center z-50">
+      <div class="text-center">
+        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p class="mt-4 text-gray-700">読み込み中...</p>
+      </div>
+    </div>
+
+    <!-- ヘッダー -->
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-2xl font-bold">進行業務一覧</h1>
+      <a href='<?= getAppUrl() ?>?page=completed' class="text-blue-600 hover:underline">完了業務一覧 &gt;</a>
+    </div>
+
+    <!-- 業務追加ボタン -->
+    <button onclick="window.top.location.href='<?= getAppUrl() ?>?page=create'"
+      class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4">
+      業務追加 +
+    </button>
+
+    <!-- セクションのコンテナ -->
+    <div id="sections" class="space-y-8"></div>
+
+    <script>
+
+      const loading = document.getElementById('loading');
+
+      const flagBorderColors = {
+        '◎': 'border-blue-400',
+        '〇': 'border-green-400',
+        '△': 'border-yellow-400',
+        '✕': 'border-red-400'
+      };
+
+      const dueLabels = {
+        overdue: '納期超過',
+        today: '今日',
+        tomorrow: '明日',
+        dayAfterTomorrow: '2025/6/30'
+      };
+
+      const toggleSection = (id) => {
+        const el = document.getElementById(id);
+        el.classList.toggle('hidden');
+        const icon = document.getElementById(id + '-toggle');
+        icon.textContent = el.classList.contains('hidden') ? '▶' : '▼';
+      };
+
+      function createProgressBar(rate) {
+        const percent = Math.min(100, Math.max(0, rate || 0));
+        return `
+        <div class"flex flex-col">
+          <div class="w-full bg-gray-200 rounded h-2 mt-2 mb-1">
+            <div class="h-2 rounded bg-blue-500" style="width: ${percent}%"></div>
+          </div>
+          <div>${percent}%</div>
+          </div>
+        `;
+      }
+
+      function createCard(b) {
+        const border = flagBorderColors[b.flag] || 'border-gray-300';
+        return `
+          <div class="border-2 ${border} rounded p-4 mb-2 bg-white cursor-pointer hover:shadow"
+               onclick="window.top.location.href='<?= getAppUrl()?>?page=details&id=${b.id}'">
+            <div class="flex justify-between items-center font-semibold">
+              <div>${b.title}</div>
+              <div class="text-sm text-gray-600 border-b-2  ${border}">${b.status}  ${b.flag || '　'}</div>
+            </div>
+            ${createProgressBar(b.progressRate)}
+            <div class="text-right text-sm text-gray-500">納期: ${b.dueDate}</div>
+          </div>
+        `;
+      }
+
+      function groupBusinesses(businesses) {
+        const today = new Date();
+        const result = {
+          '納期が近い業務': {
+            overdue: [],
+            today: [],
+            tomorrow: [],
+            dayAfterTomorrow: []
+          },
+          '要警戒': [],
+          '未進行':[],
+          '進行中': [],
+          '待機中': []
+        };
+
+        for (const b of businesses) {
+          if (['Completed'].includes(b.status)) continue;
+
+          const due = new Date(b.dueDate);
+          const now = new Date();
+          now.setHours(0, 0, 0, 0)
+          const diff = Math.floor((due - now) / (1000 * 60 * 60 * 24));
+
+          
+          if (!isNaN(due.getTime()) && due < now) result['納期が近い業務'].overdue.push(b);
+          else if (!isNaN(due.getTime()) && diff === 0) result['納期が近い業務'].today.push(b);
+          else if (!isNaN(due.getTime()) && diff === 1) result['納期が近い業務'].tomorrow.push(b);
+          else if (!isNaN(due.getTime()) && diff === 2) result['納期が近い業務'].dayAfterTomorrow.push(b);
+          else if (b.flag === '✕') result['要警戒'].push(b);else if (b.status === 'Unstarted') result['未進行'].push(b);
+          else if (b.status === 'InProgress') result['進行中'].push(b);
+          else if (b.status === 'OnHold') result['待機中'].push(b);
+        }
+
+        return result;
+      }
+
+      function renderSection(title, contentHTML, id) {
+        return `
+          <div>
+            <div class="cursor-pointer font-bold text-lg mb-2" onclick="toggleSection('${id}')">
+              <span id="${id}-toggle">▼</span> ${title}
+            </div>
+            <div id="${id}">
+              ${contentHTML || `<div class="text-sm text-gray-500">該当する業務はありません</div>`}
+            </div>
+          </div>
+        `;
+      }
+
+      function renderBusinesses (businesses) {
+        if (!businesses) {
+          document.getElementById('sections').innerHTML =
+          `<div class="text-red-600">データがnullです</div>`;
+          loading.classList.add('hidden');
+          return;
+        }
+        console.log('businesses:',businesses)
+        const grouped = groupBusinesses(businesses);
+        const container = document.getElementById('sections');
+
+        // 納期が近い業務
+        let dueHTML = '';
+        for (const key of ['overdue', 'today', 'tomorrow', 'dayAfterTomorrow']) {
+          const list = grouped['納期が近い業務'][key];
+          dueHTML += `<div class="font-semibold mb-1 mt-3">${dueLabels[key]}</div>`;
+          if (list.length) {
+            dueHTML += list.map(b => createCard(b)).join('');
+          } else {
+            dueHTML += `<div class="text-sm text-gray-500 mb-2">納期が${dueLabels[key]}の業務はありません</div>`;
+          }
+        }
+        container.innerHTML += renderSection('納期が近い業務', dueHTML, 'due');
+
+        // その他のカテゴリ
+        for (const key of ['要警戒','未進行', '進行中', '待機中']) {
+          const list = grouped[key];
+          const html = list.map(b => createCard(b)).join('');
+          container.innerHTML += renderSection(key, html, key);
+        }
+
+        loading.classList.add('hidden');
+      }
+
+      function errorHandler(error){
+        document.getElementById('sections').innerHTML =
+            `<div class="text-red-600">データの取得に失敗しました: ${error.message}</div>`;
+          loading.classList.add('hidden');
+        }
+
+
+      function displayBusinesses() {
+        loading.classList.remove('hidden');
+
+        google.script.run
+          .withSuccessHandler(renderBusinesses)
+          .withFailureHandler(errorHandler)
+          .getBusinesses();
+      }
+
+      window.onload = displayBusinesses;
+
+    </script>
+  </body>
+</html>

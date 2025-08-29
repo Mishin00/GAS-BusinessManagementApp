@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>業務詳細ページ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body data-rooturl="<?= getAppUrl() ?>" class="p-6 bg-gray-100 text-gray-800 font-sans">
+  <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50 hidden">
+    <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 animate-spin border-t-blue-500"></div>
+  </div>
+  <style>
+    .loader {
+      border-top-color: #3498db;
+    }
+  </style>
+
+  <div id="content">
+    <div class="flex justify-between items-center mb-4">
+      <button id="back-button" class="text-blue-600 hover:underline">&lt; 戻る</button>
+      <button id="edit-btn" class="bg-blue-500 text-white px-4 py-2 rounded">編集</button>
+    </div>
+
+    <div class="bg-white p-4">
+      <div class="flex flex-row justify-between">
+        <div class="mb-2 text-lg font-bold" id="project-title"></div>
+        <div class="text-sm text-gray-600" id="status-flag"></div>
+      </div>
+
+      <div class="mt-4 text-sm flex flex-row justify-between">
+        <div class="w-1/4">依頼日: <span id="request-date"></span></div>
+        <div class="w-1/4">納期: <span id="due-date"></span></div>
+        <div class="w-1/4">着手日: <span id="start-date"></span></div>
+        <div class="w-1/4">完了日: <span id="completion-date"></span></div>
+      </div>
+
+      <div class="mt-4">
+        <div class="h-2 bg-gray-200 rounded">
+          <div id="progress-bar-inner" class="h-2 bg-blue-500 rounded" style="width: 0%"></div>
+        </div>
+        <div class="text-right text-sm text-gray-500" id="progress-percent">0%</div>
+      </div>
+
+      <div class="mt-4 text-sm">
+        備考: <span id="memo"></span>
+      </div>
+    </div>
+
+    <div class="mt-6 space-y-4">
+      <div class="flex flex-row justify-between">
+        <h3 class="text-2xl font-bold">TASKS</h3>
+        <button onclick="toggleTaskForm()" class="text-sky-400 hover:text-sky-600">タスク追加 +</button>
+      </div>
+
+      <!-- タスク追加フォーム -->
+      <div id="task-add-form" class="bg-white p-4 rounded shadow mb-6 hidden">
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">タイトル</label>
+          <input id="task-title" type="text" class="border rounded w-full px-2 py-1" />
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">重み (weight)</label>
+          <input id="task-weight" type="number" min="1" class="border rounded w-full px-2 py-1" />
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">備考</label>
+          <textarea id="task-notes" class="border rounded w-full px-2 py-1"></textarea>
+        </div>
+        <div class="flex space-x-2 mt-2">
+          <button id="task-submit-btn" class="bg-blue-500 text-white px-4 py-1 rounded">追加</button>
+          <button id="task-cancel-btn" class="text-gray-600 px-4 py-1">キャンセル</button>
+        </div>
+      </div>
+
+
+      <!-- タスクステータス別表示 -->
+      <div class="space-y-4">
+        <div class="flex space-x-1 items-center cursor-pointer border-b-2 border-gray-400 px-4 py-2" onclick="toggleStatus('Unstarted')">
+          <span class="text-sm text-gray-600" id="toggle-Unstarted">▼</span>
+          <h3 class="font-semibold text-sm">Unstarted</h3>
+        </div>
+        <div id="status-Unstarted"></div>
+      </div>
+      <div class=" space-y-4">
+        <div class="flex space-x-1 items-center cursor-pointer border-b-2 border-gray-400 px-4 py-2" onclick="toggleStatus('InProgress')">
+          <span class="text-sm text-gray-600" id="toggle-InProgress">▼</span>
+          <h3 class="font-semibold text-sm">InProgress</h3>
+        </div>
+        <div id="status-InProgress"></div>
+      </div>
+      <div class=" space-y-4">
+        <div class="flex space-x-1 items-center cursor-pointer border-b-2 border-gray-400 px-4 py-2" onclick="toggleStatus('OnHold')">
+          <span class="text-sm text-gray-600" id="toggle-OnHold">▼</span>
+          <h3 class="font-semibold text-sm">OnHold</h3>
+        </div>
+        <div id="status-OnHold"></div>
+      </div>
+      <div class=" space-y-4">
+        <div class="flex space-x-1 items-center cursor-pointer border-b-2 border-gray-400 px-4 py-2" onclick="toggleStatus('Completed')">
+          <span class="text-sm text-gray-600" id="toggle-Completed">▼</span>
+          <h3 class="font-semibold text-sm">Completed</h3>
+        </div>
+        <div id="status-Completed"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isEditing = false;
+    let currentBusiness = null;
+
+    window.onload = function () {
+      google.script.url.getLocation(function (location) {
+        const businessId = location.parameter.id;
+        if (businessId) {
+          showLoading(true);
+          google.script.run
+            .withSuccessHandler(renderBusinessDetails)
+            .withFailureHandler(error => {
+              document.getElementById('content').innerHTML =
+                `<div class="text-red-600">読み込みに失敗しました: ${error.message}</div>`;
+              showLoading(false);
+            })
+            .getBusinessDetails(businessId);
+        }
+      });
+
+      document.getElementById('edit-btn').addEventListener('click', toggleEditMode);
+    };
+
+    function toggleEditMode() {
+      isEditing = !isEditing;
+      const btn = document.getElementById('edit-btn');
+      btn.textContent = isEditing ? '完了' : '編集';
+
+      if (isEditing) {
+        enableEditing(currentBusiness.business);
+      } else {
+        saveEdits();
+      }
+    }
+
+    function enableEditing(b) {
+      document.getElementById('project-title').innerHTML = `<input type="text" id="edit-title" class="border px-2" value="${b.title}">`;
+      document.getElementById('request-date').innerHTML = `<input type="date" id="edit-requestDate" value="${formatDate(b.requestDate)}">`;
+      document.getElementById('start-date').innerHTML = `<input type="date" id="edit-startDate" value="${formatDate(b.startDate)}">`;
+      document.getElementById('due-date').innerHTML = `<input type="date" id="edit-dueDate" value="${formatDate(b.dueDate)}">`;
+      document.getElementById('completion-date').innerHTML = `<input type="date" id="edit-completionDate" value="${formatDate(b.completionDate)}">`;
+      document.getElementById('memo').innerHTML = `<textarea id="edit-memo" class="border w-full">${b.memo || ''}</textarea>`;
+      document.getElementById('status-flag').innerHTML = `
+      <select id="edit-status" class="border rounded px-1 text-sm">
+        ${['Unstarted', 'InProgress', 'OnHold', 'Completed'].map(s =>
+          `<option value="${s}" ${b.status === s ? 'selected' : ''}>${s}</option>`
+        ).join('')}
+      </select>
+      <span class="ml-1">${b.flag || ''}</span>
+    `;
+
+    }
+
+    function saveEdits() {
+      showLoading(true);
+      const updated = {
+        id: currentBusiness.business.id,
+        title: document.getElementById('edit-title').value,
+        requestDate: formatOutputDate(document.getElementById('edit-requestDate').value),
+        startDate: formatOutputDate(document.getElementById('edit-startDate').value),
+        dueDate: formatOutputDate(document.getElementById('edit-dueDate').value),
+        completionDate: formatOutputDate(document.getElementById('edit-completionDate').value),
+        memo: document.getElementById('edit-memo').value,
+        status: document.getElementById('edit-status').value,
+      };
+
+      google.script.run
+        .withSuccessHandler(() => {
+          isEditing = false;
+          document.getElementById('edit-btn').textContent = '編集';
+          google.script.run.withSuccessHandler(renderBusinessDetails).getBusinessDetails(updated.id);
+        })
+        .withFailureHandler(err => {
+          alert('保存に失敗しました: ' + err.message);
+          showLoading(false);
+        })
+        .updateBusiness(updated);
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('/');
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+
+    function formatOutputDate(dateStr) {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('-');
+      return `${y}/${m}/${d}`;
+    }
+
+    function renderBusinessDetails(business) {
+      currentBusiness = business;
+      const b = business.business;
+      document.getElementById('project-title').textContent = b.title;
+      document.getElementById('status-flag').textContent = `${b.status} ${b.flag}`;
+      document.getElementById('request-date').textContent = b.requestDate || '';
+      document.getElementById('start-date').textContent = b.startDate || '';
+      document.getElementById('due-date').textContent = b.dueDate || '';
+      document.getElementById('completion-date').textContent = b.completionDate || '';
+      document.getElementById('memo').textContent = b.memo || '';
+      document.getElementById('progress-bar-inner').style.width = `${b.progressRate || 0}%`;
+      document.getElementById('progress-percent').textContent = `${b.progressRate || 0}%`;
+
+      const back = document.getElementById('back-button');
+      back.onclick = () => {
+        const rootUrl = document.body.dataset.rooturl;
+        const url = b.status === 'Completed'
+          ? `${rootUrl}?page=completed`: rootUrl;
+        window.top.location.href = b.status === 'Completed'
+          ? `${rootUrl}?page=completed`: rootUrl;
+      };
+
+      renderTasks(business.tasks || []);
+      showLoading(false);
+    }
+
+    function toggleStatus(status) {
+      const container = document.getElementById(`status-${status}`);
+      const icon = document.getElementById(`toggle-${status}`);
+      container.classList.toggle('hidden');
+      icon.textContent = container.classList.contains('hidden') ? '▶' : '▼';
+    }
+
+    function toggleTask(id) {
+      const detail = document.getElementById(`task-detail-${id}`);
+      const icon = document.getElementById(`task-toggle-${id}`);
+      detail.classList.toggle('hidden');
+      icon.textContent = detail.classList.contains('hidden') ? '▶' : '▼';
+    }
+
+    function renderTasks(tasks) {
+      const statuses = ['Unstarted', 'InProgress', 'OnHold', 'Completed'];
+      statuses.forEach(status => {
+        const container = document.getElementById(`status-${status}`);
+        const filtered = tasks.filter(t => t.status === status);
+        if (filtered.length === 0) {
+          container.innerHTML = '<div class="text-sm text-gray-500">タスクはありません</div>';
+          return;
+        }
+
+        container.innerHTML = filtered.map(task => {
+          const progress = Math.round((Number(task.progress.split("/")[0]) || 0) / (Number(task.progress.split("/")[1]) || 1) * 100);
+          return `
+            <div id="task-${task.id}" class="bg-white border rounded shadow mb-2">
+              <div class="relative border">
+                <div class="absolute left-0 top-0 h-full z-0 bg-blue-100" style="width: ${progress}%"></div>
+                <div class="relative z-10 flex justify-between items-center px-4 py-2 cursor-pointer" onclick="toggleTask('${task.id}')">
+                  <div class="space-x-1">
+                    <span id="task-toggle-${task.id}">▶</span>
+                    <span class="font-semibold">${task.title}</span>
+                  </div>
+                  <div class="text-sm text-gray-600">weight: ${task.weight || 0}</div>
+                </div>
+              </div>
+              <div id="task-detail-${task.id}" class="hidden px-4 py-2 text-sm text-gray-700 space-y-1 relative">
+                <div>進捗: ${task.progress.split("/")[0] || 0}/${task.progress.split("/")[1] || 1} ⇒ ${progress}%</div>
+                <div>notes: ${task.notes || ''}</div>
+                <button class="absolute right-2 bottom-2 text-blue-500 text-xs underline" onclick="editTask('${task.id}')">編集</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      });
+    }
+
+    function toggleTaskForm() {
+      document.getElementById('task-add-form').classList.toggle('hidden');
+    }
+
+    document.getElementById('task-submit-btn').addEventListener('click', () => {
+      const title = document.getElementById('task-title').value.trim();
+      const weight = Number(document.getElementById('task-weight').value);
+      const notes = document.getElementById('task-notes').value.trim();
+
+      if (!title || weight <= 0) {
+        alert('タイトルと正の重みを入力してください');
+        return;
+      }
+
+      const newTask = {
+        businessId: currentBusiness.business.id,
+        title,
+        weight,
+        notes
+      };
+
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(() => {
+          // フォーム初期化と再描画
+          document.getElementById('task-title').value = '';
+          document.getElementById('task-weight').value = '';
+          document.getElementById('task-notes').value = '';
+          document.getElementById('task-add-form').classList.add('hidden');
+
+          google.script.run
+            .withSuccessHandler(renderBusinessDetails)
+            .getBusinessDetails(currentBusiness.business.id);
+        })
+        .withFailureHandler(err => {
+          alert('タスク追加に失敗しました: ' + err.message);
+          showLoading(false);
+        })
+        .writeTask(newTask);
+    });
+
+    document.getElementById('task-cancel-btn').addEventListener('click', () => {
+      document.getElementById('task-add-form').classList.add('hidden');
+    });
+
+    function editTask(taskId) {
+      const task = currentBusiness.tasks.find(t => t.id === Number(taskId));
+      const detail = document.getElementById(`task-${taskId}`);
+
+      detail.innerHTML = `
+        <div class="m-4">
+          <div class="mb-1">
+            <label class="text-xs text-gray-600">タイトル</label>
+            <input id="edit-task-title-${taskId}" value="${task.title}" class="border rounded w-full px-2 py-1 text-sm"/>
+          </div>
+          <div class="mb-1">
+            <label class="text-xs text-gray-600">ステータス</label>
+            <select id="edit-task-status-${taskId}" class="border rounded w-full px-2 py-1 text-sm">
+              ${['Unstarted', 'InProgress', 'OnHold', 'Completed'].map(s =>
+                `<option value="${s}" ${task.status === s ? 'selected' : ''}>${s}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="mb-1">
+            <label class="text-xs text-gray-600">重み</label>
+            <input id="edit-task-weight-${taskId}" type="number" value="${task.weight}" min="1" class="border rounded w-full px-2 py-1 text-sm"/>
+          </div>
+          <div class="mb-1">
+            <label class="text-xs text-gray-600">進捗</label>
+            <div class="flex flex-row">
+              <input id="edit-task-progress-done-${taskId}" value="${task.progress.split('/')[0]}" class="border rounded w-full px-2 py-1 text-sm"/>
+              <span class ="mx-2">/</span>
+              <input id="edit-task-progress-total-${taskId}" value="${task.progress.split('/')[1]}" class="border rounded w-full px-2 py-1 text-sm"/>
+            </div>
+          </div>
+          <div class="mb-1">
+            <label class="text-xs text-gray-600">備考</label>
+            <textarea id="edit-task-notes-${taskId}" class="border rounded w-full px-2 py-1 text-sm">${task.notes || ''}</textarea>
+          </div>
+          <div class="flex justify-end space-x-2 mt-2">
+            <button onclick="submitTaskEdit('${taskId}')" class="bg-blue-500 text-white text-xs px-3 py-1 rounded">保存</button>
+            <button onclick="cancelTaskEdit('${taskId}')" class="text-gray-500 text-xs underline">キャンセル</button>
+          </div>
+        </div>
+      `;
+    }
+
+
+    function submitTaskEdit(taskId) {
+      const done = Number(document.getElementById(`edit-task-progress-done-${taskId}`).value);
+      const total = Number(document.getElementById(`edit-task-progress-total-${taskId}`).value);
+      const updated = {
+        id: taskId,
+        title: document.getElementById(`edit-task-title-${taskId}`).value,
+        weight: Number(document.getElementById(`edit-task-weight-${taskId}`).value),
+        progress: `${done}/${total}`,
+        notes: document.getElementById(`edit-task-notes-${taskId}`).value,
+        status: document.getElementById(`edit-task-status-${taskId}`).value,
+      };
+
+      if (!updated.title || updated.weight <= 0) {
+        alert('タイトルと正の重みを入力してください');
+        return;
+      }
+      if (done < 0 || total <= 0) {
+        alert('進捗は正の数字を入力してください');
+        return;
+      }
+
+      showLoading(true);
+      google.script.run
+        .withSuccessHandler(() => {
+          google.script.run.withSuccessHandler(renderBusinessDetails).getBusinessDetails(currentBusiness.business.id);
+        })
+        .withFailureHandler(err => {
+          alert('保存に失敗しました: ' + err.message);
+          showLoading(false);
+        })
+        .updateTask(updated); // GAS側にこの関数が必要
+    }
+
+    function cancelTaskEdit(taskId) {
+      renderTasks(currentBusiness.tasks);
+    }
+
+
+
+
+    function showLoading(show = true) {
+      document.getElementById('loading-overlay').classList.toggle('hidden', !show);
+    }
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="p-6 font-sans bg-gray-50 text-gray-800">
+  <!-- ローディング表示 -->
+  <div id="loading" class="fixed inset-0 bg-white bg-opacity-70 flex items-center justify-center z-50">
+    <div class="text-center">
+      <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+      <p class="mt-4 text-gray-700">読み込み中...</p>
+    </div>
+  </div>
+
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold">完了業務一覧</h1>
+    <a href='<?= getAppUrl() ?>' class="text-blue-600 hover:underline">進行業務一覧 &gt;</a>
+  </div>
+
+  <div class="flex items-center mb-4 space-x-4">
+    <label for="monthSelect">完了月</label>
+    <select id="monthSelect" class="p-2 border rounded"></select>
+  </div>
+  <div class="flex items-center space-x-4 mb-4">
+    <button id="descBtn" class="text-blue-600 font-bold underline" onclick="setSortOrder(true)">降順</button>
+    <button id="ascBtn" class="text-blue-600" onclick="setSortOrder(false)">昇順</button>
+  </div>
+
+  <div id="listContainer" class="space-y-4"></div>
+
+  <script>
+    const loading = document.getElementById('loading');
+
+    let sortDesc = true;
+
+    function setSortOrder(desc) {
+      sortDesc = desc;
+      updateSortButtons();
+      updateDisplay(completedBusinesses); // completedBusinesses はグローバル変数にしておく
+    }
+
+    function updateSortButtons() {
+      document.getElementById('descBtn').className =
+        sortDesc ? 'text-blue-600 font-bold underline' : 'text-blue-600';
+      document.getElementById('ascBtn').className =
+        !sortDesc ? 'text-blue-600 font-bold underline' : 'text-blue-600';
+    }
+
+    let completedBusinesses = [];
+
+    function loadBusinesses() {
+      loading.classList.remove('hidden');
+
+      google.script.run.withSuccessHandler(renderList).getBusinesses();
+    }
+
+    function renderList(businesses) {
+      completedBusinesses = businesses.filter(b => b.status === 'Completed');
+      completedBusinesses.forEach(b => b.completionDateObj = new Date(b.completionDate));
+
+      const months = [...new Set(completedBusinesses.map(b => {
+        const d = b.completionDateObj;
+        return `${d.getFullYear()}/${('0' + (d.getMonth() + 1)).slice(-2)}`;
+      }))].sort((a, b) => b.localeCompare(a));
+
+      const monthSelect = document.getElementById('monthSelect');
+      monthSelect.innerHTML = months.map(m => `<option value="${m}">${m.replace('/', '年')}月</option>`).join('');
+      monthSelect.onchange = () => updateDisplay(completedBusinesses);
+
+      updateSortButtons();
+      updateDisplay(completedBusinesses);
+      loading.classList.add('hidden');
+
+    }
+
+    function updateDisplay(completed) {
+      const sel = document.getElementById('monthSelect').value;
+      const filtered = completed.filter(b =>
+        b.completionDate && b.completionDate.startsWith(`${sel}/`)
+      ).sort((a, b) => {
+        if (a.completionDate < b.completionDate) return sortDesc ? 1 : -1;
+        if (a.completionDate > b.completionDate) return sortDesc ? -1 : 1;
+        return 0;
+      });
+
+      const container = document.getElementById('listContainer');
+      container.innerHTML = filtered.length
+        ? filtered.map(b => `
+            <div class="p-4 border rounded bg-white cursor-pointer hover:shadow" onclick='window.top.location.href="<?= getAppUrl()?>?page=details&id=${b.id}"'>
+              <div class="font-semibold">${b.title}</div>
+              <div class="text-sm text-gray-600">
+                依頼日：${b.requestDate}　納期：${b.dueDate}　完了日：${b.completionDate}
+              </div>
+            </div>
+          `).join('')
+        : '<div class="text-gray-500">該当する完了業務がありません</div>';
+    }
+
+window.onload = loadBusinesses;
+  </script>
+</body>
+</html>

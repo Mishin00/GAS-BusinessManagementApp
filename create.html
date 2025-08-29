@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body data-rooturl="<?= getAppUrl() ?>" class="p-6 font-sans bg-gray-50 text-gray-800">
+    <!-- 戻る -->
+    <a href='<?= getAppUrl() ?>' class="text-blue-600 hover:underline mb-4 inline-block">&lt; 戻る</a>
+
+    <h1 class="text-2xl font-bold mb-6">新規業務の追加</h1>
+
+    <form id="businessForm" class="space-y-4 max-w-md">
+      <div>
+        <label class="block font-semibold mb-1">プロジェクト名</label>
+        <input type="text" id="title" class="w-full border border-gray-300 rounded px-3 py-2" required>
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-1">依頼日</label>
+        <input type="date" id="requestDate" class="w-full border border-gray-300 rounded px-3 py-2" required>
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-1">納期</label>
+        <input type="date" id="dueDate" class="w-full border border-gray-300 rounded px-3 py-2" required>
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-1">備考</label>
+        <textarea id="notes" class="w-full border border-gray-300 rounded px-3 py-2"></textarea>
+      </div>
+
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+        登録する
+      </button>
+    </form>
+
+    <script>
+      window.onload = () => {
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('requestDate').value = today;
+      };
+
+      document.getElementById('businessForm').onsubmit = (e) => {
+        e.preventDefault();
+
+        const business = {
+          title: document.getElementById('title').value.trim(),
+          requestDate: document.getElementById('requestDate').value,
+          dueDate: document.getElementById('dueDate').value,
+          notes: document.getElementById('notes').value.trim()
+        };
+
+        if (!business.title || !business.requestDate ||!business.dueDate) {
+          alert('プロジェクト名と依頼日、納期は必須です');
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler((id) => {
+            alert('業務を登録しました');
+            const rootUrl = document.body.dataset.rooturl;
+            window.top.location.href = `${rootUrl}?page=details&id=${id}`;
+          })
+          .withFailureHandler((e) => {
+            alert('登録に失敗しました: ' + e.message);
+          })
+          .writeBusiness(business);
+      };
+
+      
+    </script>
+  </body>
+</html>
